@@ -4,40 +4,41 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+
 import '../models/models.dart';
 
 class ProductDataSource extends ChangeNotifier {
   final String _baseUrl = 'testingflutterapp-5b65e-default-rtdb.europe-west1.firebasedatabase.app';
+
   final List<Products> products = [];
-  final _storage = const FlutterSecureStorage();
-  File? newPictureFile;
-  bool isLoading = true;
-  bool isSaving = false;
   late Products selectedProduct;
 
+  final storage = new FlutterSecureStorage();
+
+  File? newPictureFile;
+
+  bool isLoading = true;
+  bool isSaving = false;
+
   ProductDataSource() {
-    loadProducts();
+    this.loadProducts();
   }
 
   Future<List<Products>> loadProducts() async {
     isLoading = true;
     notifyListeners();
-    final url = Uri.https(
-      _baseUrl,
-      'products.json',
-      {'auth': await _storage.read(key: 'idToken') ?? ''},
-    );
+
+    final url = Uri.https(_baseUrl, 'products.json', {'auth': await storage.read(key: 'token') ?? ''});
     final resp = await http.get(url);
-    // await products.map((e) => Products.fromJson(resp.body));
-    // print(products);
+
     final Map<String, dynamic> productsMap = json.decode(resp.body);
-    productsMap.forEach(
-      (key, value) {
-        final tempProdcut = Products.fromMap(value);
-        tempProdcut.id = key;
-        products.add(tempProdcut);
-      },
-    );
+
+    productsMap.forEach((key, value) {
+      final tempProduct = Products.fromMap(value);
+      tempProduct.id = key;
+      products.add(tempProduct);
+    });
+
     isLoading = false;
     notifyListeners();
 
@@ -49,8 +50,10 @@ class ProductDataSource extends ChangeNotifier {
     notifyListeners();
 
     if (product.id == null) {
+      // Es necesario crear
       await createProduct(product);
     } else {
+      // Actualizar
       await updateProduct(product);
     }
 
@@ -58,57 +61,65 @@ class ProductDataSource extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<String> updateProduct(Products p) async {
-    final url = Uri.https(_baseUrl, 'products/${p.id}.json', {'auth': await _storage.read(key: 'idToken') ?? ''});
-    final resp = await http.put(url, body: p.toJson());
-    final decodecData = resp.statusCode;
-    final index = products.indexWhere((element) => p.id == element.id);
-    print(decodecData);
-    products[index] = p;
+  Future<String> updateProduct(Products product) async {
+    final url = Uri.https(_baseUrl, 'products/${product.id}.json', {'auth': await storage.read(key: 'token') ?? ''});
 
-    //notifyListeners();
+    final resp = await http.put(url, body: product.toJson());
+    final decodedData = resp.body;
 
-    return '';
+    //TODO: Actualizar el listado de productos
+    final index = products.indexWhere((element) => element.id == product.id);
+    products[index] = product;
+
+    return product.id!;
   }
 
-  Future<String> createProduct(Products p) async {
-    final url = Uri.https(_baseUrl, 'products.json', {'auth': await _storage.read(key: 'idToken') ?? ''});
-    final resp = await http.post(url, body: p.toJson());
-    final decodecData = json.decode(resp.body);
-    p.id = decodecData['name'];
-    products.add(p);
+  Future<String> createProduct(Products product) async {
+    final url = Uri.https(_baseUrl, 'products.json', {'auth': await storage.read(key: 'token') ?? ''});
 
-    //notifyListeners();
+    final resp = await http.post(url, body: product.toJson());
+    final decodedData = json.decode(resp.body);
 
-    return p.id!;
+    product.id = decodedData['name'];
+
+    products.add(product);
+
+    return product.id!;
   }
 
-  void updateSelectedProductImage(path) {
-    newPictureFile = File.fromUri(Uri(path: path));
+  void updateSelectedProductImage(String path) {
     selectedProduct.picture = path;
+    newPictureFile = File.fromUri(Uri(path: path));
+
     notifyListeners();
   }
 
   Future<String?> uploadImage() async {
     if (newPictureFile == null) return null;
+
     isSaving = true;
     notifyListeners();
 
-    final url = Uri.parse('https://api.cloudinary.com/v1_1/df8wsfkin/auto/upload?upload_preset=ybja4dlp');
-    final requestImageUpload = http.MultipartRequest('POST', url);
-    final file = await http.MultipartFile.fromPath('file', newPictureFile!.path);
-    //bind
-    requestImageUpload.files.add(file);
-    //shoot request
-    final streamResponse = await requestImageUpload.send();
+    final url = Uri.parse('https://api.cloudinary.com/v1_1/dx0pryfzn/image/upload?upload_preset=autwc6pa');
 
+    final imageUploadRequest = http.MultipartRequest('POST', url);
+
+    final file = await http.MultipartFile.fromPath('file', newPictureFile!.path);
+
+    imageUploadRequest.files.add(file);
+
+    final streamResponse = await imageUploadRequest.send();
     final resp = await http.Response.fromStream(streamResponse);
+
     if (resp.statusCode != 200 && resp.statusCode != 201) {
+      print('algo salio mal');
       print(resp.body);
       return null;
     }
-    newPictureFile = null;
-    final respData = json.decode(resp.body);
-    return respData['secure_url'];
+
+    this.newPictureFile = null;
+
+    final decodedData = json.decode(resp.body);
+    return decodedData['secure_url'];
   }
 }
